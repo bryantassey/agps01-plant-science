@@ -23,6 +23,7 @@ let armed = false;
 let gestureStart = 0;
 let gestureSign = 0;
 let calibration = 0;
+let motionFeedback = "";
 
 const current = () => players[playerIndex];
 const get = (id) => document.getElementById(id);
@@ -58,7 +59,9 @@ function deal(playerCount, bank = VOCABULARY) {
 }
 
 function show(name, html) {
+  if (screenName === "playing") get("controls-menu").close();
   screenName = name;
+  document.documentElement.classList.toggle("in-play", name === "playing");
   app.innerHTML = html;
   const heading = app.querySelector("h1");
   heading.tabIndex = -1;
@@ -101,7 +104,7 @@ function instructions() {
   show("instructions", `<section class="panel"><p class="eyebrow">How to play</p><h1>Give clues. Guess terms.</h1>
     <ol><li>Hold the phone upright against your forehead, screen facing your teammates. Landscape gives them more room to read.</li>
     <li>Teammates give clues without saying the term or any part of it.</li>
-    <li>Tip the display toward the floor for <strong>Correct</strong> or toward the ceiling to <strong>Pass</strong>. Return to neutral after each tilt. A teammate can also tap the buttons.</li>
+    <li>Tip the display toward the floor for <strong>Correct</strong> or toward the ceiling to <strong>Pass</strong>. Return to neutral after each tilt. For touch play, tap <strong>Controls</strong> to choose Correct or Pass.</li>
     <li>Solve ten terms in five minutes. Passed terms come back. Take turns until everyone has played.</li></ol>
     ${motionPanel()}<div class="actions"><button class="primary" data-action="start">Start Game</button>
     <button class="secondary" data-action="setup">Back</button></div></section>`);
@@ -183,16 +186,83 @@ function playTurn() {
     <div id="warning" role="status"></div>
     <h1 class="term" id="term" aria-live="polite"></h1>
     <p id="card-status" class="note" role="status"></p>
-    <div class="card-actions"><button class="correct" data-action="correct">✓ Correct</button>
-    <button class="pass" data-action="pass">↷ Pass</button></div>
-  </section><div class="toolbar"><button class="secondary" data-action="restart">Restart game</button>
-    <button class="secondary" id="recalibrate" data-action="calibrate" ${motionEnabled ? "" : "hidden"}>Recalibrate tilt</button>
-    <span id="motion-status" style="color:white" class="note" role="status"></span></div>`);
+    <p id="tilt-notice" class="note" role="status"></p>
+    <button class="secondary controls-toggle" id="controls-toggle" aria-haspopup="dialog">Controls</button>
+  </section>
+  <dialog id="controls-menu" class="controls-menu" aria-labelledby="controls-title">
+    <h2 id="controls-title">Controls</h2>
+    <p class="note">The turn timer keeps running.</p>
+    <div class="controls-actions">
+      <button class="correct" data-action="correct">Correct</button>
+      <button class="pass" data-action="pass">Pass</button>
+      <button class="secondary" data-action="calibrate" ${motionEnabled ? "" : "disabled"}>Recalibrate</button>
+      <button class="secondary" data-action="resume" autofocus>Resume</button>
+    </div>
+    <p id="motion-status" class="note" role="status"></p>
+  </dialog>`);
+  bindControls();
+  if (motionEnabled && neutral === null) {
+    get("tilt-notice").textContent = "Choose Recalibrate in Controls to use tilt.";
+  }
   showCard();
   deadline = performance.now() + TURN_MS;
   previousSeconds = 301;
   updateTime();
   ticker = setInterval(updateTime, 100);
+}
+
+function bindControls() {
+  const toggle = get("controls-toggle");
+  const menu = get("controls-menu");
+  let press;
+  let cleanRelease = false;
+  toggle.addEventListener("pointerdown", (event) => {
+    cleanRelease = false;
+    press = event.isPrimary && event.button === 0
+      ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
+  });
+  toggle.addEventListener("pointermove", (event) => {
+    if (press?.id === event.pointerId &&
+        Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) press = null;
+  });
+  toggle.addEventListener("pointercancel", () => { press = null; });
+  toggle.addEventListener("pointerleave", () => { press = null; });
+  toggle.addEventListener("pointerup", (event) => {
+    const bounds = toggle.getBoundingClientRect();
+    cleanRelease = press?.id === event.pointerId &&
+      Math.hypot(event.clientX - press.x, event.clientY - press.y) <= 10 &&
+      event.clientX >= bounds.left && event.clientX <= bounds.right &&
+      event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+    press = null;
+  });
+  toggle.addEventListener("click", (event) => {
+    // Keyboard and assistive technology can activate the native button directly.
+    if (event.detail !== 0 && !cleanRelease) return;
+    cleanRelease = false;
+    armed = false;
+    gestureSign = 0;
+    get("motion-status").textContent = motionFeedback || (motionEnabled
+      ? (neutral === null ? "Hold the phone upright at your forehead, then choose Recalibrate." : "Tilt is calibrated.")
+      : "Touch controls are ready.");
+    menu.showModal();
+  });
+  menu.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    resumePlay();
+  });
+}
+
+function resumePlay() {
+  calibration++;
+  armed = false;
+  gestureSign = 0;
+  motionFeedback = "";
+  get("controls-menu").close();
+}
+
+function touchAnswer(correct) {
+  resumePlay();
+  answer(correct);
 }
 
 function showCard() {
@@ -352,12 +422,17 @@ function orientationChanged() {
   recent = [];
   armed = false;
   gestureSign = 0;
-  if (motionEnabled) setMotionStatus("Phone rotated. Recalibrate to use tilt, or use the buttons.");
+  if (motionEnabled) {
+    motionFeedback = screenName === "playing"
+      ? "Phone rotated. Choose Recalibrate in Controls to use tilt."
+      : "Phone rotated. Recalibrate to use tilt.";
+    setMotionStatus(motionFeedback);
+    if (screenName === "playing") get("tilt-notice").textContent = motionFeedback;
+  }
 }
 
 function calibrate() {
   const attempt = ++calibration;
-  neutral = null;
   recent = [];
   armed = false;
   gestureSign = 0;
@@ -375,7 +450,9 @@ function calibrate() {
       return;
     }
     neutral = average;
-    setMotionStatus("Motion ready. Return to neutral after each tilt.");
+    motionFeedback = "Motion ready. Return to neutral after each tilt.";
+    setMotionStatus(motionFeedback);
+    if (screenName === "playing") get("tilt-notice").textContent = "";
   }, 850);
 }
 
@@ -388,7 +465,7 @@ function readMotion({ beta, gamma }) {
   const pitch = Math.asin(Math.cos(beta * rad) * Math.cos(gamma * rad)) / rad;
   recent.push({ pitch, now });
   while (recent[0].now < now - 420) recent.shift();
-  if (screenName !== "playing" || neutral === null || document.hidden) return;
+  if (screenName !== "playing" || get("controls-menu").open || neutral === null || document.hidden) return;
   const delta = pitch - neutral;
   if (Math.abs(delta) < 10) armed = true;
   const sign = Math.abs(delta) >= 27 ? Math.sign(delta) : 0;
@@ -447,12 +524,19 @@ app.addEventListener("submit", (event) => {
 app.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
+  if (screenName === "playing") {
+    const menu = get("controls-menu");
+    if (!menu.open || !menu.contains(button)) return;
+  }
   const actions = {
     setup, enable: enableMotion, calibrate, start: startTurn,
-    correct: () => answer(true), pass: () => answer(false),
+    correct: () => touchAnswer(true), pass: () => touchAnswer(false), resume: resumePlay,
     download, restart: () => restart(false), new: () => restart(true)
   };
   actions[button.dataset.action]?.();
+});
+app.addEventListener("contextmenu", (event) => {
+  if (screenName === "playing") event.preventDefault();
 });
 if (window.screen.orientation?.addEventListener) {
   window.screen.orientation.addEventListener("change", orientationChanged);
