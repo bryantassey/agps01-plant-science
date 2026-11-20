@@ -1,4 +1,5 @@
-﻿* { box-sizing: border-box; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
 :root { color-scheme: light; --navy:#10283d; --green:#174936; --gold:#f2ca69; --ink:#17334a; --muted:#48615e; --paper:#fffdf6; --line:#d6e0d5; font-family:system-ui,sans-serif; }
 body { margin:0; background:radial-gradient(ellipse at 85% 0%, #246148, transparent 65%), var(--navy); color:var(--ink); min-height:100vh; }
 .shell { width:min(100%, 780px); margin:auto; padding:max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
