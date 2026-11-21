@@ -2,8 +2,12 @@
 
 const CARDS = 10;
 const TURN_MS = 300_000;
+const TABLETOP_TAP_GAP_MS = 425;
 const app = document.querySelector("#app");
 let screenName = "welcome";
+let mode = "motion";
+let modePickerReturn = setup;
+let nextTabletopTap = 0;
 let players = [];
 let drafts = ["", "", "", ""];
 let count = 4;
@@ -27,6 +31,7 @@ let motionFeedback = "";
 
 const current = () => players[playerIndex];
 const get = (id) => document.getElementById(id);
+const modeLabel = () => mode === "motion" ? "Motion Mode" : "Tabletop Mode";
 const safe = (value) => String(value).replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 })[char]);
@@ -59,7 +64,7 @@ function deal(playerCount, bank = VOCABULARY) {
 }
 
 function show(name, html) {
-  if (screenName === "playing") get("controls-menu").close();
+  if (screenName === "playing") app.querySelector("dialog[open]")?.close();
   screenName = name;
   document.documentElement.classList.toggle("in-play", name === "playing");
   app.innerHTML = html;
@@ -68,19 +73,60 @@ function show(name, html) {
   heading.focus();
 }
 
+function chooseMode(returnTo) {
+  modePickerReturn = returnTo;
+  show("mode", `<section class="panel">
+    <p class="eyebrow">Plant Propagation Heads Up!</p>
+    <h1>How Would You Like to Play?</h1>
+    <div class="mode-options">
+      <button class="mode-option" data-action="choose-motion">
+        <strong>Motion Mode</strong>
+        <span>Hold the phone at your forehead with the screen facing teammates. Tilt down for Correct and up for Pass.</span>
+        <span class="mode-requirement">Uses motion permission and calibration</span>
+      </button>
+      <button class="mode-option" data-action="choose-tabletop">
+        <strong>Tabletop Mode</strong>
+        <span>Put the phone on the table facing your teammates. The guesser looks away while teammates give clues and tap Correct or Pass.</span>
+        <span class="mode-requirement">Plays with touch alone</span>
+      </button>
+    </div>
+    ${returnTo === handoff ? '<div class="actions"><button class="secondary" data-action="handoff">Back to handoff</button></div>' : ""}
+  </section>`);
+}
+
+function setMode(nextMode) {
+  if (mode !== nextMode) {
+    calibration++;
+    neutral = null;
+    recent = [];
+    armed = false;
+    gestureSign = 0;
+    motionFeedback = "";
+    mode = nextMode;
+    if (mode === "tabletop") window.removeEventListener("deviceorientation", readMotion);
+    else if (motionEnabled) window.addEventListener("deviceorientation", readMotion);
+  }
+}
+
+function selectMode(nextMode) {
+  setMode(nextMode);
+  modePickerReturn();
+}
+
 function setup() {
   clearInterval(ticker);
   releaseWake();
   calibration++;
   show("setup", `<section class="panel">
-    <p class="eyebrow">Player setup</p><h1>Who’s at your table?</h1>
+    <p class="eyebrow">Player setup · ${modeLabel()}</p><h1>Who’s at your table?</h1>
     <p>Enter each player’s first name and last initial.</p>
     <form id="players" autocomplete="off">
       <label>Number of players<select id="count">${[2, 3, 4].map((n) =>
         `<option ${n === count ? "selected" : ""}>${n}</option>`).join("")}</select></label>
       <div id="names" class="fields"></div>
       <p id="setup-error" role="alert"></p>
-      <div class="actions"><button class="primary">Continue →</button></div>
+      <div class="actions"><button class="primary">Continue →</button>
+      <button class="secondary" type="button" data-action="modes">Change mode</button></div>
     </form>
   </section>`);
   showNames();
@@ -94,19 +140,22 @@ function showNames() {
 function motionPanel() {
   let status = "Touch controls are always available.";
   if (motionEnabled) status = neutral === null ? "Hold the phone at your forehead and calibrate." : "Motion ready. Return to this position after each tilt.";
-  return `<div class="motion"><strong>Optional tilt controls</strong>
+  return `<div class="motion"><strong>Set up tilt controls</strong>
     <p id="motion-status" class="note" role="status">${status}</p>
     <div class="actions"><button class="secondary" data-action="enable">${motionEnabled ? "Enable motion again" : "Enable motion"}</button>
     <button class="secondary" id="calibrate" data-action="calibrate" ${motionEnabled ? "" : "disabled"}>Calibrate</button></div></div>`;
 }
 
 function instructions() {
-  show("instructions", `<section class="panel"><p class="eyebrow">How to play</p><h1>Give clues. Guess terms.</h1>
-    <ol><li>Hold the phone upright against your forehead, screen facing your teammates. Landscape gives them more room to read.</li>
-    <li>Teammates give clues without saying the term or any part of it.</li>
-    <li>Tip the display toward the floor for <strong>Correct</strong> or toward the ceiling to <strong>Pass</strong>. Return to neutral after each tilt. For touch play, tap <strong>Controls</strong> to choose Correct or Pass.</li>
+  const directions = mode === "motion"
+    ? `<li>Hold the phone upright against your forehead, screen facing your teammates.</li>
+       <li>Tilt the display down for <strong>Correct</strong> or up for <strong>Pass</strong>. Return to neutral after each tilt. You can also score through <strong>Controls</strong>.</li>`
+    : `<li>Place the phone on the table where teammates can read it. The guesser sits or stands where they can’t see the screen.</li>
+       <li>One teammate taps <strong>Correct</strong> for a solved term or <strong>Pass</strong> to come back to it.</li>`;
+  show("instructions", `<section class="panel"><p class="eyebrow">How to play · ${modeLabel()}</p><h1>Give clues. Guess terms.</h1>
+    <ol>${directions}<li>Teammates give clues without saying the term or any part of it.</li>
     <li>Solve ten terms in five minutes. Passed terms come back. Take turns until everyone has played.</li></ol>
-    ${motionPanel()}<div class="actions"><button class="primary" data-action="start">Start Game</button>
+    ${mode === "motion" ? motionPanel() : ""}<div class="actions"><button class="primary" data-action="start">Start Game</button>
     <button class="secondary" data-action="setup">Back</button></div></section>`);
 }
 
@@ -163,7 +212,7 @@ function startTurn() {
   gestureSign = 0;
   show("countdown", `<section class="panel center"><p class="eyebrow">Player ${playerIndex + 1} of ${players.length}</p>
     <h1>Get ready, ${safe(current().name)}</h1><output id="countdown" class="count" aria-live="polite">3</output>
-    <p>Hold the phone steady with the screen facing your teammates.</p></section>`);
+    <p>${mode === "motion" ? "Hold the phone steady with the screen facing your teammates." : "Put the phone on the table. Guesser, look away from the screen."}</p></section>`);
   keepAwake();
   const readyAt = performance.now() + 3000;
   ticker = setInterval(() => {
@@ -180,35 +229,58 @@ function startTurn() {
 
 function playTurn() {
   queue = current().cards.map((term) => ({ term, passed: false }));
-  show("playing", `<section class="panel card">
+  nextTabletopTap = 0;
+  deadline = performance.now() + TURN_MS;
+  previousSeconds = 301;
+  renderTurn();
+  ticker = setInterval(updateTime, 100);
+}
+
+function renderTurn() {
+  const motion = mode === "motion";
+  show("playing", `<section class="panel card ${motion ? "" : "tabletop-card"}">
     <div class="card-header"><span>${safe(current().name)} · <span id="score">0</span>/10 correct</span>
     <span id="clock" class="clock" role="timer" aria-label="Time remaining">5:00</span></div>
     <div id="warning" role="status"></div>
     <h1 class="term" id="term" aria-live="polite"></h1>
     <p id="card-status" class="note" role="status"></p>
-    <p id="tilt-notice" class="note" role="status"></p>
-    <button class="secondary controls-toggle" id="controls-toggle" aria-haspopup="dialog">Controls</button>
+    ${motion ? `<p id="tilt-notice" class="note" role="status"></p>
+      <button class="secondary controls-toggle" id="controls-toggle" aria-haspopup="dialog">Controls</button>`
+      : `<div class="tabletop-actions">
+        <button class="correct" data-action="table-correct">Correct</button>
+        <button class="pass" data-action="table-pass">Pass</button>
+      </div><button class="secondary controls-toggle" data-action="switch-mode" aria-haspopup="dialog">Change mode</button>`}
   </section>
-  <dialog id="controls-menu" class="controls-menu" aria-labelledby="controls-title">
+  ${motion ? `<dialog id="controls-menu" class="controls-menu" aria-labelledby="controls-title">
     <h2 id="controls-title">Controls</h2>
     <p class="note">The turn timer keeps running.</p>
     <div class="controls-actions">
       <button class="correct" data-action="correct">Correct</button>
       <button class="pass" data-action="pass">Pass</button>
-      <button class="secondary" data-action="calibrate" ${motionEnabled ? "" : "disabled"}>Recalibrate</button>
+      <button class="secondary" id="calibrate" data-action="calibrate" ${motionEnabled ? "" : "disabled"}>Recalibrate</button>
       <button class="secondary" data-action="resume" autofocus>Resume</button>
     </div>
     <p id="motion-status" class="note" role="status"></p>
+    <div class="actions">
+      ${motionEnabled ? "" : '<button class="secondary" data-action="enable">Enable motion</button>'}
+      <button class="secondary" data-action="switch-mode">Change mode</button>
+    </div>
+  </dialog>` : ""}
+  <dialog id="switch-menu" class="controls-menu" aria-labelledby="switch-title">
+    <h2 id="switch-title">Switch to ${motion ? "Tabletop Mode" : "Motion Mode"}?</h2>
+    <p class="note">Your cards and score stay in place. The timer keeps running.</p>
+    ${motion ? "" : '<p class="note">Open Controls after switching to enable and calibrate tilt.</p>'}
+    <div class="actions">
+      <button class="secondary" data-action="cancel-switch" autofocus>Keep playing</button>
+      <button class="primary" data-action="confirm-switch">Switch mode</button>
+    </div>
   </dialog>`);
-  bindControls();
-  if (motionEnabled && neutral === null) {
-    get("tilt-notice").textContent = "Choose Recalibrate in Controls to use tilt.";
+  if (motion) {
+    bindControls();
+    if (neutral === null) get("tilt-notice").textContent = "Open Controls to set up tilt.";
   }
   showCard();
-  deadline = performance.now() + TURN_MS;
-  previousSeconds = 301;
-  updateTime();
-  ticker = setInterval(updateTime, 100);
+  updateTime(true);
 }
 
 function bindControls() {
@@ -265,23 +337,46 @@ function touchAnswer(correct) {
   answer(correct);
 }
 
+function tabletopAnswer(correct) {
+  const now = performance.now();
+  if (now < nextTabletopTap) return;
+  nextTabletopTap = now + TABLETOP_TAP_GAP_MS;
+  answer(correct);
+}
+
+function openModeSwitch() {
+  if (mode === "motion") resumePlay();
+  get("switch-menu").showModal();
+}
+
+function confirmModeSwitch() {
+  if (performance.now() >= deadline) {
+    endTurn(true);
+    return;
+  }
+  setMode(mode === "motion" ? "tabletop" : "motion");
+  nextTabletopTap = performance.now() + TABLETOP_TAP_GAP_MS;
+  renderTurn();
+}
+
 function showCard() {
   get("term").textContent = queue[0].term;
   get("score").textContent = current().score;
-  get("card-status").textContent = queue[0].passed ? "Retry · passed earlier" : "Give clues without saying the term.";
+  const cardNote = queue[0].passed ? "Retry · passed earlier" : "Give clues without saying the term.";
+  get("card-status").textContent = mode === "tabletop" ? `${queue.length} of 10 left · ${cardNote}` : cardNote;
 }
 
-function updateTime() {
+function updateTime(refresh = false) {
   const left = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
   if (!left) {
     endTurn(true);
     return;
   }
-  if (left === previousSeconds) return;
-  if (previousSeconds > 30 && left <= 30) {
+  if (!refresh && left === previousSeconds) return;
+  if (left <= 30) {
     get("warning").textContent = "30 seconds or less!";
     get("clock").classList.add("urgent");
-    signal([740, 740]);
+    if (previousSeconds > 30) signal([740, 740]);
   }
   previousSeconds = left;
   get("clock").textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
@@ -314,9 +409,15 @@ function endTurn(expired) {
     results();
     return;
   }
-  show("handoff", `<section class="panel"><p class="eyebrow">${safe(turnMessage)} · ${player.score}/10 correct</p>
-    <h1>Great job! Pass the phone to Player ${playerIndex + 1}.</h1><p>${safe(current().name)}, start when you’re ready. Recalibrate if your neutral position has changed.</p>
-    ${motionPanel()}<div class="actions"><button class="primary" data-action="start">Start turn</button>
+  handoff();
+}
+
+function handoff() {
+  show("handoff", `<section class="panel"><p class="eyebrow">${safe(turnMessage)} · ${players[playerIndex - 1].score}/10 correct</p>
+    <h1>Great job! Pass the phone to Player ${playerIndex + 1}.</h1>
+    <p>${safe(current().name)}, your turn is set to <strong>${modeLabel()}</strong>. Start when you’re ready.</p>
+    ${mode === "motion" ? motionPanel() : ""}<div class="actions"><button class="primary" data-action="start">Start turn</button>
+    <button class="secondary" data-action="handoff-modes">Change mode</button>
     <button class="secondary" data-action="restart">Restart game</button></div></section>`);
 }
 
@@ -396,6 +497,7 @@ function setMotionStatus(message) {
 }
 
 async function enableMotion() {
+  if (mode !== "motion") return;
   const Orientation = window.DeviceOrientationEvent;
   if (!Orientation || !window.isSecureContext) {
     setMotionStatus("Motion is unavailable here. Use the Correct and Pass buttons.");
@@ -408,6 +510,7 @@ async function enableMotion() {
       return;
     }
     motionEnabled = true;
+    if (mode !== "motion") return;
     window.addEventListener("deviceorientation", readMotion);
     if (get("calibrate")) get("calibrate").disabled = false;
     setMotionStatus("Hold the phone upright at your forehead, then tap Calibrate.");
@@ -417,6 +520,7 @@ async function enableMotion() {
 }
 
 function orientationChanged() {
+  if (mode !== "motion") return;
   calibration++;
   neutral = null;
   recent = [];
@@ -432,6 +536,7 @@ function orientationChanged() {
 }
 
 function calibrate() {
+  if (mode !== "motion" || !motionEnabled) return;
   const attempt = ++calibration;
   recent = [];
   armed = false;
@@ -457,7 +562,7 @@ function calibrate() {
 }
 
 function readMotion({ beta, gamma }) {
-  if (!Number.isFinite(beta) || !Number.isFinite(gamma)) return;
+  if (mode !== "motion" || !Number.isFinite(beta) || !Number.isFinite(gamma)) return;
   const now = performance.now();
   // Component of the screen-facing normal along world up. This axis is
   // independent of whether the player holds the phone in portrait or landscape.
@@ -465,7 +570,7 @@ function readMotion({ beta, gamma }) {
   const pitch = Math.asin(Math.cos(beta * rad) * Math.cos(gamma * rad)) / rad;
   recent.push({ pitch, now });
   while (recent[0].now < now - 420) recent.shift();
-  if (screenName !== "playing" || get("controls-menu").open || neutral === null || document.hidden) return;
+  if (screenName !== "playing" || app.querySelector("dialog[open]") || neutral === null || document.hidden) return;
   const delta = pitch - neutral;
   if (Math.abs(delta) < 10) armed = true;
   const sign = Math.abs(delta) >= 27 ? Math.sign(delta) : 0;
@@ -490,7 +595,8 @@ function restart(clearNames) {
     drafts = ["", "", "", ""];
     count = 4;
   }
-  setup();
+  if (clearNames) chooseMode(setup);
+  else setup();
 }
 
 app.addEventListener("input", (event) => {
@@ -525,12 +631,18 @@ app.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
   if (screenName === "playing") {
-    const menu = get("controls-menu");
-    if (!menu.open || !menu.contains(button)) return;
+    const menu = app.querySelector("dialog[open]");
+    if (menu && !menu.contains(button)) return;
+    if (!menu && mode === "motion") return;
   }
   const actions = {
+    modes: () => chooseMode(setup), "handoff-modes": () => chooseMode(handoff), handoff,
+    "choose-motion": () => selectMode("motion"), "choose-tabletop": () => selectMode("tabletop"),
     setup, enable: enableMotion, calibrate, start: startTurn,
     correct: () => touchAnswer(true), pass: () => touchAnswer(false), resume: resumePlay,
+    "table-correct": () => tabletopAnswer(true), "table-pass": () => tabletopAnswer(false),
+    "switch-mode": openModeSwitch, "cancel-switch": () => get("switch-menu").close(),
+    "confirm-switch": confirmModeSwitch,
     download, restart: () => restart(false), new: () => restart(true)
   };
   actions[button.dataset.action]?.();

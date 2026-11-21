@@ -70,6 +70,30 @@ select { width:100px; }
 .controls-menu::backdrop { background:#10283dc9; touch-action:none; }
 .controls-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .controls-menu #motion-status { margin:10px 0 0; }
+.mode-options {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%, 235px),1fr));
+  gap:12px;
+  margin-top:18px;
+}
+.mode-option {
+  display:grid;
+  align-content:start;
+  justify-items:start;
+  text-align:left;
+  padding:18px;
+  color:var(--ink);
+  background:#ecf1e8;
+  border:1px solid #82948d;
+  border-top:4px solid var(--green);
+}
+.mode-option:last-child { background:#fff2cf; border-top-color:#af6700; }
+.mode-option strong { font:700 1.5rem Georgia,serif; }
+.mode-option span { font-weight:500; line-height:1.4; }
+.mode-option .mode-requirement { font-size:.85rem; font-weight:750; }
+.tabletop-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.tabletop-actions button { min-height:60px; font-size:clamp(1.1rem,4vmin,1.45rem); }
+.tabletop-card .controls-toggle { margin-top:6px; }
 .results { padding:clamp(12px,4vw,30px); }
 .results h1 { font-size:clamp(1.55rem,5.4vw,2.8rem); }
 .results table { border-collapse:collapse; width:100%; }
