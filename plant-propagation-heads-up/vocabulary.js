@@ -1,20 +1,21 @@
-// Provisional Week 14 bank. Review against the lecture slides before classroom use.
+// Final AGPS-01 Week 14 vocabulary bank.
 // Add or replace quoted terms within the matching category. Keep terms unique
 // (case-insensitive) and keep at least eight in each of the six categories.
 const VOCABULARY = {
   "Seed propagation and germination": [
     "Seed coat", "Embryo", "Cotyledon", "Endosperm", "Germination",
     "Imbibition", "Radicle", "Seed dormancy", "Stratification",
-    "Scarification", "Seed viability"
+    "Scarification", "Plant propagation"
   ],
   "Cuttings and adventitious rooting": [
-    "Stem cutting", "Leaf cutting", "Root cutting", "Node", "Internode",
+    "Stem cutting", "Leaf cutting", "Node", "Internode",
     "Adventitious root", "Auxin", "Rooting medium", "Misting",
-    "Softwood cutting", "Hardwood cutting"
+    "Softwood cutting", "Hardwood cutting", "Humidity dome", "Bottom heat",
+    "Mother plant", "Tip cutting", "Perlite"
   ],
   "Division and separation": [
     "Division", "Separation", "Rhizome", "Stolon", "Bulb", "Corm",
-    "Stem tuber", "Offset", "Crown", "Sucker"
+    "Stem tuber", "Offset", "Crown", "Sucker", "Strawberry runner"
   ],
   "Layering": [
     "Simple layering", "Air layering", "Tip layering", "Mound layering",
@@ -23,12 +24,22 @@ const VOCABULARY = {
   ],
   "Grafting and budding": [
     "Scion", "Rootstock", "Cambium", "Graft union", "Graft compatibility",
-    "Cleft graft", "Whip-and-tongue graft", "T-budding", "Chip budding",
-    "Budwood", "Grafting tape"
+    "Whip-and-tongue graft", "T-budding", "Grafting tape", "Grafting", "Budding"
   ],
   "Tissue culture": [
     "Micropropagation", "Explant", "Aseptic technique", "Culture medium",
-    "Agar", "Contamination", "Callus", "Plantlet", "Shoot multiplication",
-    "Acclimatization", "Surface sterilization"
+    "Agar", "Contamination", "Callus", "Plantlet",
+    "Acclimatization", "Surface sterilization", "Hardening off", "Synthetic seed"
   ]
 };
+
+// Familiar is the default. Add or remove an exact bank term here to change its
+// difficulty. Keep its topic assignment above regardless of difficulty.
+const CHALLENGING_TERMS = new Set([
+  "Imbibition", "Stratification", "Scarification",
+  "Adventitious root", "Auxin",
+  "Corm", "Offset",
+  "Serpentine layering", "Trench layering",
+  "Graft compatibility", "Whip-and-tongue graft", "T-budding",
+  "Explant", "Callus", "Acclimatization", "Surface sterilization", "Synthetic seed"
+]);

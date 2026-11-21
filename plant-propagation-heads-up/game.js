@@ -45,7 +45,7 @@ function shuffle(items) {
   return result;
 }
 
-function deal(playerCount, bank = VOCABULARY) {
+function deal(playerCount, bank = VOCABULARY, challengingTerms = CHALLENGING_TERMS) {
   const used = new Set();
   const categories = Object.values(bank).map((terms) => shuffle(terms.filter((term) => {
     const key = term.trim().toLowerCase();
@@ -56,11 +56,51 @@ function deal(playerCount, bank = VOCABULARY) {
   if (categories.length !== 6 || categories.some((terms) => terms.length < playerCount * 2)) {
     throw new Error("The vocabulary needs six categories with at least eight unique terms each.");
   }
-  const rotation = shuffle([0, 1, 2, 3, 4, 5]);
-  return Array.from({ length: playerCount }, (_, player) => {
+  const rotation = shuffle(categories.map((_, index) => index));
+  const slotsByCategory = categories.map(() => []);
+  const decks = Array.from({ length: playerCount }, () => []);
+  const challengingPerPlayer = decks.map(() => 0);
+  decks.forEach((_, player) => {
     const singles = new Set([rotation[player * 2 % 6], rotation[(player * 2 + 1) % 6]]);
-    return shuffle(categories.flatMap((terms, i) => terms.splice(0, singles.has(i) ? 1 : 2)));
+    slotsByCategory.forEach((slots, index) => {
+      slots.push(player);
+      if (!singles.has(index)) slots.push(player);
+    });
   });
+
+  // Every player gets one or two cards from each topic. Within those slots,
+  // assign any required challenging cards first, then fill toward the team target.
+  let challengingCount = 0;
+  const pools = categories.map((terms, index) => {
+    const familiar = terms.filter((term) => !challengingTerms.has(term));
+    const challenging = terms.filter((term) => challengingTerms.has(term));
+    const slots = shuffle(slotsByCategory[index]);
+    while (slots.length > familiar.length) {
+      const player = slots.pop();
+      decks[player].push(challenging.pop());
+      challengingPerPlayer[player]++;
+      challengingCount++;
+    }
+    return { familiar, challenging, slots };
+  });
+
+  const target = Math.round(playerCount * CARDS * 0.2);
+  while (challengingCount < target) {
+    const candidates = shuffle(pools.flatMap((pool) => pool.challenging.length
+      ? pool.slots.map((player, slot) => ({ pool, player, slot })) : []));
+    if (!candidates.length) break;
+    const { pool, player, slot } = candidates.reduce((best, candidate) =>
+      challengingPerPlayer[candidate.player] < challengingPerPlayer[best.player] ? candidate : best);
+    pool.slots.splice(slot, 1);
+    decks[player].push(pool.challenging.pop());
+    challengingPerPlayer[player]++;
+    challengingCount++;
+  }
+
+  for (const { familiar, slots } of pools) {
+    for (const player of slots) decks[player].push(familiar.pop());
+  }
+  return decks.map(shuffle);
 }
 
 function show(name, html) {
